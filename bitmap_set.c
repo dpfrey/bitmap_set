@@ -1,5 +1,5 @@
 #include "bitmap_set.h"
-
+#include <pthread.h>
 #include <stdint.h>
 
 #define BITS_PER_UNSIGNED (sizeof(unsigned int) * 8)
@@ -13,12 +13,14 @@ enum operation
 
 struct bmset_Set
 {
+    pthread_mutex_t lock;
     ssize_t min_val;
     ssize_t max_val;
     unsigned int data[];
 };
 
-static bool value_to_index(bmset_Set_t *set, ssize_t value, size_t *unsigned_index, uint8_t *bit_index)
+static bool value_to_index(
+    bmset_Set_t *set, ssize_t value, size_t *unsigned_index, uint8_t *bit_index)
 {
     if (value > set->max_val || value < set->min_val)
         return false;
@@ -38,26 +40,45 @@ bmset_Set_t *bmset_create(ssize_t min_val, ssize_t max_val)
         (bits_required / BITS_PER_UNSIGNED) + ((bits_required % BITS_PER_UNSIGNED) ? 1 : 0);
     bmset_Set_t *s = calloc(sizeof(bmset_Set_t) + unsigned_required, 1);
     if (!s)
-        return NULL;
+        goto fail;
+
+    if (pthread_mutex_init(&s->lock, NULL))
+        goto fail;
 
     s->min_val = min_val;
     s->max_val = max_val;
 
     return s;
+
+fail:
+    if (s)
+        free(s);
+    return NULL;
 }
 
 void bmset_destroy(bmset_Set_t *set)
 {
+    pthread_mutex_destroy(&set->lock);
     free(set);
 }
 
-static bmset_Result_t bmset_generic_op(bmset_Set_t *set, ssize_t value, enum operation op, bool *preexists)
+static bmset_Result_t bmset_generic_op(
+    bmset_Set_t *set, ssize_t value, enum operation op, bool *preexists)
 {
     size_t unsigned_index;
     uint8_t bit_index;
+    bmset_Result_t res = BMSET_RES_SUCCESS;
 
-    if (!value_to_index(set, value, &unsigned_index, &bit_index))
-        return BMSET_RES_ERROR_VALUE_RANGE;
+    if (!value_to_index(set, value, &unsigned_index, &bit_index)) {
+        res = BMSET_RES_ERROR_VALUE_RANGE;
+        goto done;
+    }
+
+    int pthread_res = pthread_mutex_lock(&set->lock);
+    if (pthread_res) {
+        res = BMSET_RES_ERROR_THREADING;
+        goto done;
+    }
 
     *preexists = (set->data[unsigned_index] & (1 << bit_index)) != 0;
 
@@ -77,10 +98,17 @@ static bmset_Result_t bmset_generic_op(bmset_Set_t *set, ssize_t value, enum ope
         break;
 
     default:
-        return BMSET_RES_ERROR_INTERNAL;
+        res = BMSET_RES_ERROR_INTERNAL;
+        break;
     }
 
-    return BMSET_RES_SUCCESS;
+    pthread_res = pthread_mutex_unlock(&set->lock);
+    if (pthread_res) {
+        res = BMSET_RES_ERROR_THREADING;
+    }
+
+done:
+    return res;
 }
 
 bmset_Result_t bmset_is_element_of(bmset_Set_t *set, ssize_t value, bool *is_element)

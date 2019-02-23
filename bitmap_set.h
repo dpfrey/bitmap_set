@@ -11,6 +11,7 @@ typedef enum
     BMSET_RES_SUCCESS,
     BMSET_RES_ERROR_VALUE_RANGE,
     BMSET_RES_ERROR_INTERNAL,
+    BMSET_RES_ERROR_THREADING,
 } bmset_Result_t;
 
 bmset_Set_t * bmset_create(ssize_t min_val, ssize_t max_val);
