@@ -5,7 +5,8 @@
 
 int main(int argc)
 {
-    bmset_Set_t *set = bmset_create(INT16_MIN, INT16_MAX);
+    bool thread_safe = false;
+    bmset_Set_t *set = bmset_create(INT16_MIN, INT16_MAX, thread_safe);
     assert(set);
 
     bool was_element;

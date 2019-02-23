@@ -14,7 +14,7 @@ typedef enum
     BMSET_RES_ERROR_THREADING,
 } bmset_Result_t;
 
-bmset_Set_t * bmset_create(ssize_t min_val, ssize_t max_val);
+bmset_Set_t * bmset_create(ssize_t min_val, ssize_t max_val, bool thread_safe);
 void bmset_destroy(bmset_Set_t *set);
 bmset_Result_t bmset_is_element_of(bmset_Set_t *set, ssize_t value, bool *is_element);
 bmset_Result_t bmset_add(bmset_Set_t *set, ssize_t value, bool *was_element);

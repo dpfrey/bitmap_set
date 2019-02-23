@@ -13,6 +13,7 @@ enum operation
 
 struct bmset_Set
 {
+    bool use_lock;
     pthread_mutex_t lock;
     ssize_t min_val;
     ssize_t max_val;
@@ -31,7 +32,7 @@ static bool value_to_index(
     return true;
 }
 
-bmset_Set_t *bmset_create(ssize_t min_val, ssize_t max_val)
+bmset_Set_t *bmset_create(ssize_t min_val, ssize_t max_val, bool thread_safe)
 {
     const ssize_t bits_required = 1 + (max_val - min_val);
     if (bits_required < 1)
@@ -42,7 +43,9 @@ bmset_Set_t *bmset_create(ssize_t min_val, ssize_t max_val)
     if (!s)
         goto fail;
 
-    if (pthread_mutex_init(&s->lock, NULL))
+    s->use_lock = thread_safe;
+
+    if (s->use_lock && pthread_mutex_init(&s->lock, NULL))
         goto fail;
 
     s->min_val = min_val;
@@ -58,7 +61,8 @@ fail:
 
 void bmset_destroy(bmset_Set_t *set)
 {
-    pthread_mutex_destroy(&set->lock);
+    if (set->use_lock)
+        pthread_mutex_destroy(&set->lock);
     free(set);
 }
 
@@ -74,10 +78,12 @@ static bmset_Result_t bmset_generic_op(
         goto done;
     }
 
-    int pthread_res = pthread_mutex_lock(&set->lock);
-    if (pthread_res) {
-        res = BMSET_RES_ERROR_THREADING;
-        goto done;
+    if (set->use_lock) {
+        int pthread_res = pthread_mutex_lock(&set->lock);
+        if (pthread_res) {
+            res = BMSET_RES_ERROR_THREADING;
+            goto done;
+        }
     }
 
     *preexists = (set->data[unsigned_index] & (1 << bit_index)) != 0;
@@ -102,9 +108,11 @@ static bmset_Result_t bmset_generic_op(
         break;
     }
 
-    pthread_res = pthread_mutex_unlock(&set->lock);
-    if (pthread_res) {
-        res = BMSET_RES_ERROR_THREADING;
+    if (set->use_lock) {
+        int pthread_res = pthread_mutex_unlock(&set->lock);
+        if (pthread_res) {
+            res = BMSET_RES_ERROR_THREADING;
+        }
     }
 
 done:
